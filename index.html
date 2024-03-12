@@ -57,7 +57,8 @@
                 }
             }
             function clearSVG() {
-                document.querySelector('svg').innerHTML = '';
+                document.getElementsByTagName('g')[0].innerHTML = '';
+                document.getElementsByTagName('g')[1].innerHTML = '';
                 xyRange = null;
             }
             function saveSVG() {
