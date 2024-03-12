@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <title>bll2svg</title>
+    </head>
+    <body>
+        <h1>BLL -> SVG</h1>
+        <input id="fileInput" type="file" onchange="readFile()" />
+        <br />
+        <span>选择方向：</span>
+        <input type="radio" name="direction" value="up" id="up" checked />
+        <label for="up">上行</label>
+        <input type="radio" name="direction" value="down" id="down" />
+        <label for="down">下行</label>
+        <br />
+        <span>选择导出内容：</span>
+        <input type="checkbox" name="export" value="line" id="line" checked />
+        <label for="line">线路</label>
+        <input
+            type="checkbox"
+            name="export"
+            value="station"
+            id="station"
+            checked
+        />
+        <label for="station">站点</label>
+        <br />
+        <input type="button" value="添加到画板" onclick="exportSVG()" />
+        <input type="button" value="清空画板" onclick="clearSVG()" />
+        <input type="button" value="保存画板为SVG" onclick="saveSVG()" />
+        <br />
+        <svg
+            width="500"
+            height="500"
+            fill="none"
+            version="1.1"
+            xmlns="http://www.w3.org/2000/svg"
+            xmlns:xlink="http://www.w3.org/1999/xlink"
+        >
+            <g></g>
+            <g></g>
+        </svg>
+        <script>
+            var line;
+            var xyRange = null;
+
+            function exportSVG() {
+                let selectedDirection = document.querySelector(
+                    'input[name="direction"]:checked'
+                ).value;
+                try {
+                    routeToSvg(line.route[selectedDirection]);
+                } catch (e) {
+                    alert('Error: ' + e);
+                    console.error(e);
+                }
+            }
+            function clearSVG() {
+                document.querySelector('svg').innerHTML = '';
+                xyRange = null;
+            }
+            function saveSVG() {
+                let file = new XMLSerializer().serializeToString(
+                    document.querySelector('svg')
+                );
+                saveFile('export.svg', file, 'image/svg+xml');
+            }
+            function routeToSvg(route) {
+                let exportLine = document.getElementById('line').checked;
+                let exportStation = document.getElementById('station').checked;
+                let pointList = '';
+                let linePolyline = document.createElementNS(
+                    'http://www.w3.org/2000/svg',
+                    'polyline'
+                );
+                let stationGroup = document.createElementNS(
+                    'http://www.w3.org/2000/svg',
+                    'g'
+                );
+                linePolyline.setAttribute('fill', 'none');
+                linePolyline.setAttribute('stroke', '#00D3FC');
+                linePolyline.setAttribute('stroke-width', '50');
+                linePolyline.setAttribute('points', '');
+
+                route.forEach((node) => {
+                    let point = {
+                        x: getMercatorX(node.lng),
+                        y: getMercatorY(-node.lat),
+                    };
+                    if (xyRange === null) {
+                        xyRange = {
+                            x: { min: point.x, max: point.x },
+                            y: { min: point.y, max: point.y },
+                        };
+                    } else {
+                        if (point.x < xyRange.x.min) {
+                            xyRange.x.min = point.x;
+                        } else if (point.x > xyRange.x.max) {
+                            xyRange.x.max = point.x;
+                        }
+                        if (point.y < xyRange.y.min) {
+                            xyRange.y.min = point.y;
+                        } else if (point.y > xyRange.y.max) {
+                            xyRange.y.max = point.y;
+                        }
+                    }
+                    if (exportLine) {
+                        pointList += point.x + ',' + point.y + ' ';
+                    }
+                    if (exportStation && node.type == 'station') {
+                        let stationCircle = document.createElementNS(
+                            'http://www.w3.org/2000/svg',
+                            'circle'
+                        );
+                        stationCircle.setAttribute('stroke', '#00D3FC');
+                        stationCircle.setAttribute('fill', 'white');
+                        stationCircle.setAttribute('stroke-width', '25');
+                        stationCircle.setAttribute('r', '50');
+                        stationCircle.setAttribute('cx', point.x);
+                        stationCircle.setAttribute('cy', point.y);
+                        stationGroup.appendChild(stationCircle);
+                    }
+                });
+                linePolyline.setAttribute('points', pointList);
+
+                if (exportLine) {
+                    document
+                        .getElementsByTagName('g')[0]
+                        .appendChild(linePolyline);
+                }
+                if (exportStation) {
+                    document
+                        .getElementsByTagName('g')[1]
+                        .appendChild(stationGroup);
+                }
+
+                document
+                    .querySelector('svg')
+                    .setAttribute(
+                        'viewBox',
+                        [
+                            xyRange.x.min - 100,
+                            xyRange.y.min - 100,
+                            xyRange.x.max - xyRange.x.min + 200,
+                            xyRange.y.max - xyRange.y.min + 200,
+                        ].join(' ')
+                    );
+            }
+            function saveFile(filename, text, mime, constructBlob = true) {
+                if (!text) {
+                    throw '内容为空';
+                }
+                var pom = document.createElement('a');
+                pom.setAttribute(
+                    'href',
+                    URL.createObjectURL(
+                        constructBlob ? new Blob([text], { type: mime }) : text
+                    )
+                );
+                pom.setAttribute('download', filename);
+                pom.click();
+            }
+
+            function getMercatorX(lng) {
+                var earthRad = 6378137.0;
+                return ((lng * Math.PI) / 180) * earthRad;
+            }
+            function getMercatorY(lat) {
+                var earthRad = 6378137.0;
+                var a = (lat * Math.PI) / 180;
+                return (
+                    (earthRad / 2) *
+                    Math.log((1.0 + Math.sin(a)) / (1.0 - Math.sin(a)))
+                );
+            }
+            async function readFile() {
+                line = JSON.parse(
+                    await getFileContents(
+                        document.getElementById('fileInput').files[0]
+                    )
+                );
+            }
+            function getFileContents(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.readAsText(file, 'UTF-8');
+                    reader.onload = (e) => {
+                        resolve(e.target.result);
+                    };
+                });
+            }
+        </script>
+    </body>
+</html>
